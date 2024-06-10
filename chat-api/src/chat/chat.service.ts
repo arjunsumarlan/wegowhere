@@ -1,46 +1,53 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import * as amqp from 'amqplib';
 import { Logger } from '@nestjs/common';
 
 @Injectable()
-export class ChatService implements OnModuleInit {
+export class ChatService implements OnModuleInit, OnModuleDestroy {
   private readonly queue = 'messages';
   private readonly logger = new Logger(ChatService.name);
+  private connection: amqp.Connection;
+  private channel: amqp.Channel;
 
   async onModuleInit() {
-    await this.testRabbitMQConnection();
-    await this.receiveMessages();
+    await this.initializeRabbitMQ();
   }
 
-  async testRabbitMQConnection() {
+  async onModuleDestroy() {
+    await this.channel.close();
+    await this.connection.close();
+  }
+
+  private async initializeRabbitMQ() {
     try {
-      const connection = await amqp.connect(process.env.RABBITMQ_URL);
+      this.connection = await amqp.connect(process.env.RABBITMQ_URL);
+      this.channel = await this.connection.createChannel();
+      await this.channel.assertQueue(this.queue);
       this.logger.log('Successfully connected to RabbitMQ');
-      await connection.close();
+      await this.receiveMessages();
     } catch (error) {
       this.logger.error('Failed to connect to RabbitMQ', error);
     }
   }
 
   async sendMessage(message: string) {
-    const connection = await amqp.connect(process.env.RABBITMQ_URL);
-    const channel = await connection.createChannel();
-    await channel.assertQueue(this.queue);
-    await channel.sendToQueue(this.queue, Buffer.from(message));
-    await channel.close();
-    await connection.close();
+    try {
+      await this.channel.sendToQueue(this.queue, Buffer.from(message));
+    } catch (error) {
+      this.logger.error('Failed to send message to RabbitMQ', error);
+    }
   }
 
   async receiveMessages() {
-    const connection = await amqp.connect(process.env.RABBITMQ_URL);
-    const channel = await connection.createChannel();
-    await channel.assertQueue(this.queue);
-
-    channel.consume(this.queue, (msg) => {
-      if (msg !== null) {
-        this.logger.log(msg.content.toString());
-        channel.ack(msg);
-      }
-    });
+    try {
+      this.channel.consume(this.queue, (msg) => {
+        if (msg !== null) {
+          this.logger.log(msg.content.toString());
+          this.channel.ack(msg);
+        }
+      });
+    } catch (error) {
+      this.logger.error('Failed to receive messages from RabbitMQ', error);
+    }
   }
 }
