@@ -1,0 +1,32 @@
+version: '3.8'
+
+networks:
+  chatnetwork:
+    driver: bridge
+
+services:
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - chatnetwork
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "3003:3003"
+      - "5001:5001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://rabbitmq:5672
+    networks:
+      - chatnetwork
