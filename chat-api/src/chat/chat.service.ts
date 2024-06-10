@@ -30,6 +30,20 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async testRabbitMQConnection() {
+    try {
+      const connection = await amqp.connect(process.env.RABBITMQ_URL);
+      const channel = await connection.createChannel();
+      // Perform a simple operation to verify the connection
+      await channel.assertQueue(this.queue);
+      this.logger.log('RabbitMQ connection is healthy');
+      await channel.close();
+      await connection.close();
+    } catch (error) {
+      this.logger.error('Failed to connect to RabbitMQ', error);
+    }
+  }
+
   async sendMessage(message: string) {
     try {
       await this.channel.sendToQueue(this.queue, Buffer.from(message));
